@@ -1,0 +1,6 @@
+.venv
+*.csv
+.datadog.json
+cost_file/*
+tmp/
+sent/

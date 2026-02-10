@@ -1,0 +1,35 @@
+{
+    "UploadFilePrefix": "dd_ccm_upload_",
+    "DatadogCostFilesLimit": 30,
+    "SourceFilesDirectory": "cost_file",
+    "TempDirectory": "tmp",
+    "OutputDirectory": "sent",
+    "DeduplicationComparisonFields": ["ProviderName", "ChargePeriodStart", "ChargePeriodEnd", "resourceid"],
+    "currency": {
+        "EUR": "dynamic"
+    },
+    "MandatoryFieldsTargetSourceMappingß" :
+    {
+        "ProviderName": "ProviderName",
+        "ChargeDescription": "ChargeDescription",
+        "ChargePeriodStart": "BillingPeriodStart",
+        "ChargePeriodEnd": "BillingPeriodEnd",
+        "BilledCost": "BilledCost",
+        "BillingCurrency": "BillingCurrency"
+    },
+    "TagsFieldsTargetSourceMapping" :
+    {
+        "originalcurrency": "BillingCurrency",
+        "chargefrequency": "ChargeFrequency",
+        "consumedquantity": "ConsumedQuantity",
+        "consumedunit": "ConsumedUnit",
+        "pricingunit": "PricingUnit",
+        "regionid": "RegionId",
+        "resourceid": "ResourceId",
+        "servicecategory": "ServiceCategory",
+        "servicesubcategory": "ServiceSubcategory",
+        "skuid": "SkuId",
+        "subaccountid": "SubAccountId",
+        "subaccountname": "SubAccountName"
+    }
+}
