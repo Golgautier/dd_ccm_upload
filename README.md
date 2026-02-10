@@ -57,6 +57,8 @@ The `.config.json` file defines how source CSV columns are mapped to target colu
 - **`OutputDirectory`**: Directory where uploaded files are moved after successful upload (default: `output`)
 - **`UploadFilePrefix`**: Prefix for output JSON files (default: `dd_ccm_upload_`)
 - **`DatadogCostFilesLimit`**: Maximum number of Datadog files to fetch for deduplication
+- **`EventTitleTemplate`**: Template for Datadog event title when tracking uploads. Use `{filename}` placeholder (default: `"Custom cost file uploaded: {filename}"`)
+- **`EventTextTemplate`**: Template for Datadog event text when tracking uploads. Use `{filename}` and `{item_count}` placeholders (default: includes filename and item count)
 - **`DeduplicationComparisonFields`**: Fields used to identify duplicate rows
 - **`currency`**: Dictionary mapping currency codes to exchange rates or `"dynamic"`
   - If value is a number: use that fixed exchange rate to USD
@@ -73,6 +75,8 @@ Example configuration:
     "OutputDirectory": "sent",
     "UploadFilePrefix": "dd_ccm_upload_",
     "DatadogCostFilesLimit": 30,
+    "EventTitleTemplate": "Custom cost file uploaded: {filename}",
+    "EventTextTemplate": "Cost file '{filename}' has been successfully uploaded to Datadog Cloud Cost Management.\n\nNumber of items uploaded: {item_count}",
     "DeduplicationComparisonFields": ["ProviderName", "ChargePeriodStart", "ChargePeriodEnd", "resourceid"],
     "currency": {
         "EUR": 1.085000,

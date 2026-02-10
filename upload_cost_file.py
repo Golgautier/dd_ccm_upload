@@ -27,9 +27,17 @@ try:
     from datadog_api_client import ApiClient, Configuration
     from datadog_api_client.v2.api import cloud_cost_management_api
     from datadog_api_client.v2.model.custom_costs_file_line_item import CustomCostsFileLineItem
+    # Try to import Events API (v1)
+    try:
+        from datadog_api_client.v1.api import events_api
+        from datadog_api_client.v1.model.event_create_request import EventCreateRequest
+        EVENTS_API_AVAILABLE = True
+    except ImportError:
+        EVENTS_API_AVAILABLE = False
     DATADOG_API_AVAILABLE = True
 except ImportError:
     DATADOG_API_AVAILABLE = False
+    EVENTS_API_AVAILABLE = False
 
 
 def load_datadog_config(config_path=".datadog.json"):
@@ -1876,6 +1884,138 @@ def ask_user_upload_confirmation(auto_yes=False, item_count=None):
         else:
             print("Please enter 'y' for yes or 'n' for no.")
 
+def create_upload_event(datadog_config, json_file_path, item_count=None, config=None):
+    """Create a Datadog event to track the file upload.
+    
+    Creates an event in Datadog to keep a trace of the uploaded cost file.
+    Uses the Datadog Events API v1 as documented at:
+    https://docs.datadoghq.com/api/latest/events/#post-an-event
+    
+    Args:
+        datadog_config: Dictionary containing Datadog API credentials
+        json_file_path: Path to the uploaded JSON file
+        item_count: Number of items uploaded (optional)
+        config: Configuration dictionary containing event title and text templates (optional)
+    """
+    if not DATADOG_API_AVAILABLE:
+        return
+    
+    try:
+        api_key = datadog_config.get("api_key")
+        app_key = datadog_config.get("app_key")
+        site = datadog_config.get("site", "datadoghq.com")
+        
+        if not api_key or not app_key:
+            return
+        
+        json_file_path = Path(json_file_path)
+        json_filename = json_file_path.name
+        
+        # Get event title and text from config, with defaults
+        if config:
+            event_title_template = config.get("EventTitleTemplate", "Custom cost file uploaded: {filename}")
+            event_text_template = config.get("EventTextTemplate", "Cost file '{filename}' has been successfully uploaded to Datadog Cloud Cost Management.")
+        else:
+            event_title_template = "Custom cost file uploaded: {filename}"
+            event_text_template = "Cost file '{filename}' has been successfully uploaded to Datadog Cloud Cost Management."
+        
+        # Prepare event details using templates
+        # Format title (only filename placeholder)
+        title = event_title_template.format(filename=json_filename)
+        
+        # Format text (filename and optionally item_count)
+        if item_count is not None:
+            # Check if template includes item_count placeholder
+            if "{item_count}" in event_text_template:
+                text = event_text_template.format(filename=json_filename, item_count=item_count)
+            else:
+                # Format with filename first, then append item count
+                text = event_text_template.format(filename=json_filename)
+                text += f"\n\nNumber of items uploaded: {item_count}"
+        else:
+            # No item count available, only format filename
+            text = event_text_template.format(filename=json_filename)
+        
+        # Configure API client
+        configuration = Configuration()
+        configuration.api_key["apiKeyAuth"] = api_key
+        configuration.api_key["appKeyAuth"] = app_key
+        configuration.server_variables["site"] = site
+        
+        # Try to use Events API v1 if available
+        if EVENTS_API_AVAILABLE:
+            try:
+                # Import EventAlertType for alert_type
+                from datadog_api_client.v1.model.event_alert_type import EventAlertType
+                
+                # Create event request using SDK
+                body = EventCreateRequest(
+                    title=title,
+                    text=text,
+                    tags=[
+                        "source:cost_upload_tool",
+                        f"filename:{json_filename}",
+                        "type:cost_management"
+                    ],
+                    alert_type=EventAlertType.INFO,
+                    source_type_name="python"
+                )
+                
+                with ApiClient(configuration) as api_client:
+                    api_instance = events_api.EventsApi(api_client)
+                    response = api_instance.create_event(body=body)
+                    print(f"✓ Event created in Datadog to track the upload")
+                    return
+            except Exception as e:
+                print(f"Warning: Could not create Datadog event using SDK: {e}")
+        
+        # Fallback: Use direct API call via requests if SDK Events API not available
+        if REQUESTS_AVAILABLE:
+            try:
+                # Determine API endpoint based on site
+                if site == "datadoghq.eu":
+                    api_url = "https://api.datadoghq.eu/api/v1/events"
+                elif site == "ddog-gov.com":
+                    api_url = "https://api.ddog-gov.com/api/v1/events"
+                else:
+                    api_url = "https://api.datadoghq.com/api/v1/events"
+                
+                # Prepare event payload
+                event_payload = {
+                    "title": title,
+                    "text": text,
+                    "tags": [
+                        "source:cost_upload_tool",
+                        f"filename:{json_filename}",
+                        "type:cost_management"
+                    ],
+                    "alert_type": "info",
+                    "source_type_name": "cost_upload_tool"
+                }
+                
+                # Make API call
+                response = requests.post(
+                    api_url,
+                    json=event_payload,
+                    headers={
+                        "DD-API-KEY": api_key,
+                        "DD-APPLICATION-KEY": app_key,
+                        "Content-Type": "application/json"
+                    }
+                )
+                
+                if response.status_code == 202:
+                    print(f"✓ Event created in Datadog to track the upload")
+                else:
+                    print(f"Warning: Could not create Datadog event (status {response.status_code})")
+            except Exception as e:
+                print(f"Warning: Error creating Datadog event via API: {e}")
+        else:
+            print("Warning: Cannot create Datadog event (neither Events API SDK nor requests library available)")
+    
+    except Exception as e:
+        print(f"Warning: Error creating Datadog event: {e}")
+
 def upload_json_to_datadog(datadog_config, json_file_path):
     """Upload a JSON file to Datadog Cloud Cost Management platform.
     
@@ -2019,38 +2159,19 @@ def upload_json_to_datadog(datadog_config, json_file_path):
         
         # Create API client instance and upload
         with ApiClient(configuration) as api_client:
+            # Set custom header for filename before making the API call
+            # The Datadog API may accept filename via X-Filename header
+            api_client.set_default_header("X-Filename", json_filename)
+            
             # Initialize Cloud Cost Management API
             api_instance = cloud_cost_management_api.CloudCostManagementApi(api_client)
             
             try:
-                # Upload using the JSON method
-                # The Datadog API upload_custom_costs_file method accepts only body parameter
-                # However, we can try to pass filename via query parameters using call_with_http_info
-                # Check if the endpoint supports query parameters by examining the endpoint definition
-                endpoint = api_instance._upload_custom_costs_file_endpoint
-                
-                # Try to upload with filename as query parameter
-                # Note: This may not be supported by the API, but we'll attempt it
-                try:
-                    # Use call_with_http_info to pass additional parameters
-                    response = endpoint.call_with_http_info(
-                        body=body,
-                        query_params={'filename': json_filename}
-                    )
-                except (TypeError, AttributeError):
-                    # If query_params not supported, try without it
-                    try:
-                        response = endpoint.call_with_http_info(
-                            body=body,
-                            header_params={'X-Filename': json_filename}
-                        )
-                    except (TypeError, AttributeError):
-                        # Fallback: upload without filename parameter
-                        # The API will use default name 'data', but we've extracted the filename
-                        response = api_instance.upload_custom_costs_file(body=body)
+                # Upload using the JSON method via SDK
+                # The filename is set via default header, which will be included in the request
+                response = api_instance.upload_custom_costs_file(body=body)
                 
                 print(f"✓ File uploaded successfully to Datadog (JSON format) - filename: {json_filename}")
-                
                 return True
                 
             except Exception as e:
@@ -2099,6 +2220,7 @@ def main():
     if auto_yes and not specified_file:
         parser.error("The -y option requires the -file option to be specified.")
     
+
     # Step 1: Load configuration file containing field mappings
     config = load_config()
     if config is None:
@@ -2201,6 +2323,9 @@ def main():
                 
                 if upload_success:
                     print(f"\n✓ File successfully uploaded to Datadog: {output_file_path}")
+                    
+                    # Step 9.5: Create a Datadog event to track the upload
+                    create_upload_event(datadog_config, output_file_path, item_count, config=config)
                     
                     # Step 10: Move uploaded JSON file to output directory
                     output_dir_name = config.get('OutputDirectory', 'output')

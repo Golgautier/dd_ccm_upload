@@ -4,6 +4,8 @@
     "SourceFilesDirectory": "<your (relative) source directory>",
     "TempDirectory": "<your tmp directory>",
     "OutputDirectory": "<your output directory>",
+    "EventTitleTemplate": "<event title template, use {filename} placeholder>",
+    "EventTextTemplate": "<event text template, use {filename} and {item_count} placeholders>",
     "DeduplicationComparisonFields": [<list of columns headers used to do the comparison between new and old data, comma separated, with "">],
     "currency": {
         "EUR": "dynamic",

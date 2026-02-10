@@ -4,6 +4,8 @@
     "SourceFilesDirectory": "cost_file",
     "TempDirectory": "tmp",
     "OutputDirectory": "sent",
+    "EventTitleTemplate": "Custom cost file uploaded: {filename}",
+    "EventTextTemplate": "Cost file '{filename}' has been successfully uploaded to Datadog Cloud Cost Management.\n\nNumber of items uploaded: {item_count}",
     "DeduplicationComparisonFields": ["ProviderName", "ChargePeriodStart", "ChargePeriodEnd", "resourceid"],
     "currency": {
         "EUR": "dynamic"
