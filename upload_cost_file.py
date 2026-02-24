@@ -10,7 +10,7 @@ import json
 import csv
 import argparse
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import urllib.request
 import urllib.error
@@ -328,6 +328,39 @@ def format_epochmillis_to_yyyy_mm_dd(date_value):
     """
     return datetime.fromtimestamp(float(date_value)/1000).strftime("%Y-%m-%d")
 
+
+def adjust_charge_period_end_if_midnight(value):
+    """If ChargePeriodEnd is at midnight (00:00:00), return the previous day in YYYY-MM-DD.
+    
+    E.g. "2026-02-01" or "2026-02-01 00:00:00" → "2026-01-31" (last day of period).
+    Returns the value unchanged if it has a non-midnight time or if parsing fails.
+    
+    Args:
+        value: Date/datetime string (YYYY-MM-DD or ISO with time)
+        
+    Returns:
+        Date string in YYYY-MM-DD format (previous day if was midnight); or original value on error
+    """
+    if not value or not str(value).strip():
+        return value
+    value = str(value).strip()
+    try:
+        # Parse: support date-only or datetime (ISO or space-separated)
+        if "T" in value:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        elif " " in value:
+            dt = datetime.fromisoformat(value)
+        else:
+            # YYYY-MM-DD only → interpreted as that day at 00:00:00
+            dt = datetime.strptime(value, "%Y-%m-%d")
+        # If time is midnight (00:00:00), use previous day (YYYY-MM-DD)
+        if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
+            end_of_prev = dt - timedelta(seconds=1)
+            return end_of_prev.strftime("%Y-%m-%d")
+        return value
+    except (ValueError, TypeError):
+        return value
+
 def get_conversion_rates_from_user(exchange_rates, auto_yes=False):
     """Ask user to confirm or enter manual conversion rates for each currency.
     
@@ -555,6 +588,9 @@ def convert_csv(input_file_path, output_file_path, config, auto_yes=False):
                         # Special handling: Format date fields to YYYY-MM-DD
                         date_value = row.get(source_field, "")
                         output_row[target_field] = format_iso_to_yyyy_mm_dd(date_value)
+                        # If ChargePeriodEnd is at midnight, use last second of previous day
+                        if target_field == "ChargePeriodEnd":
+                            output_row[target_field] = adjust_charge_period_end_if_midnight(output_row[target_field])
                     else:
                         # Standard field mapping: copy value from source to target
                         output_row[target_field] = row.get(source_field, "")
@@ -1695,6 +1731,9 @@ def load_datadog_content_for_comparison(datadog_content_path="tmp/datadog_conten
                         value = ""
                     else:
                         value = str(value).strip()
+                    # Normalize ChargePeriodEnd: midnight → last second of previous day (for comparison)
+                    if field == "ChargePeriodEnd" and value:
+                        value = adjust_charge_period_end_if_midnight(value)
                     comparison_values.append(value)
                 
                 # Add tuple to set (tuples are hashable)
@@ -1805,6 +1844,9 @@ def clean_json_file(json_file_path, comparison_fields=None, datadog_content_path
                     value = ""
                 else:
                     value = str(value).strip()
+                # Normalize ChargePeriodEnd: midnight → last second of previous day (for comparison)
+                if field == "ChargePeriodEnd" and value:
+                    value = adjust_charge_period_end_if_midnight(value)
                 comparison_values.append(value)
             
             comparison_tuple = tuple(comparison_values)
@@ -2100,6 +2142,8 @@ def upload_json_to_datadog(datadog_config, json_file_path):
                 charge_description = str(row.get('ChargeDescription', '')).strip()
                 charge_period_start = str(row.get('ChargePeriodStart', '')).strip()
                 charge_period_end = str(row.get('ChargePeriodEnd', '')).strip()
+                # If ChargePeriodEnd is at midnight, use last second of previous day
+                charge_period_end = adjust_charge_period_end_if_midnight(charge_period_end) or charge_period_end
                 
                 # Parse billed_cost as float
                 try:
