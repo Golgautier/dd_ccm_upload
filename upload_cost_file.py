@@ -6,11 +6,12 @@ and converts it to a new CSV file with mapped fields.
 """
 
 import os
+import sys
 import json
 import csv
 import argparse
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 import urllib.request
 import urllib.error
@@ -359,6 +360,55 @@ def adjust_charge_period_end_if_midnight(value):
         return value
     except (ValueError, TypeError):
         return value
+
+
+def check_no_upcoming_end_date(json_file_path):
+    """Abort the script if the JSON file contains any ChargePeriodEnd date in the future.
+    
+    Args:
+        json_file_path: Path to the converted JSON file (list of row dicts with ChargePeriodEnd).
+        
+    Exits with code 1 and prints an error message if any end date is after today.
+    """
+    json_file_path = Path(json_file_path)
+    if not json_file_path.exists():
+        return
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not read JSON for end-date check: {e}")
+        return
+    if not isinstance(data, list):
+        return
+    today = date.today()
+    for i, row in enumerate(data):
+        if not isinstance(row, dict):
+            continue
+        end_val = row.get("ChargePeriodEnd") or row.get("charge_period_end")
+        if not end_val:
+            continue
+        end_str = str(end_val).strip()
+        if not end_str:
+            continue
+        try:
+            # Parse date (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+            if " " in end_str:
+                end_str = end_str.split(" ")[0]
+            if "T" in end_str:
+                end_str = end_str.split("T")[0]
+            end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
+            if end_date > today:
+                print("\n" + "=" * 60)
+                print("Error: The file has an upcoming end date.")
+                print(f"  ChargePeriodEnd '{end_val}' (row with index {i}) is in the future.")
+                print("  Aborting.")
+                print("=" * 60)
+                sys.exit(1)
+        except (ValueError, TypeError):
+            continue
+    return
+
 
 def get_conversion_rates_from_user(exchange_rates, auto_yes=False):
     """Ask user to confirm or enter manual conversion rates for each currency.
@@ -2300,6 +2350,9 @@ def main():
     # Step 6: Display final result
     if success:
         print("\nConversion completed successfully!")
+        
+        # Step 6.5: Abort if the file has any ChargePeriodEnd in the future
+        check_no_upcoming_end_date(output_file_path)
         
         # Step 7: Download overlapping Datadog cost files after successful conversion
         datadog_config = load_datadog_config()
