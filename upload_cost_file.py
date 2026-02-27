@@ -328,7 +328,6 @@ def format_epochmillis_to_yyyy_mm_dd(date_value):
     """
     return datetime.fromtimestamp(float(date_value)/1000).strftime("%Y-%m-%d")
 
-
 def adjust_charge_period_end_if_midnight(value):
     """If ChargePeriodEnd is at midnight (00:00:00), return the previous day in YYYY-MM-DD.
     
@@ -1004,7 +1003,6 @@ def find_overlapping_datadog_files(datadog_config, csv_start_date, csv_end_date,
                         file_name = file_attributes.get("name", "")
             
             # Skip non-JSON files and non active files
-            #GL if file_name and (not file_name.lower().endswith('.json') or not ((file_attributes.get("_data_store").get("status") in ["ACTIVE","PROCESSING","UPLOADING"]))):
             if file_name and not ((file_attributes.get("_data_store").get("status") in ["ACTIVE","PROCESSING","UPLOADING"])):
                 continue
             
@@ -1261,7 +1259,6 @@ def download_datadog_file(datadog_config, file_info, output_directory="tmp/datad
                         tag_keys = set()
                         
                         for row in file_content:
-                            #GL all_keys=row.keys()
                             if 'Tags' in row and isinstance(row['Tags'], dict):
                                 tag_keys.update(row['Tags'].keys())
                         
@@ -1269,8 +1266,6 @@ def download_datadog_file(datadog_config, file_info, output_directory="tmp/datad
                         main_fields = ['ProviderName', 'ChargeDescription', 'ChargePeriodStart', 
                                       'ChargePeriodEnd', 'BilledCost', 'BillingCurrency']
                         
-                        #GL # Remove Tags from main fields if present
-                        #GL main_fields = [f for f in main_fields if f in all_keys]
 
                         # Add other main fields that aren't Tags
                         other_fields = [f for f in all_keys if f != 'Tags' and f not in main_fields]
@@ -1731,9 +1726,6 @@ def load_datadog_content_for_comparison(datadog_content_path="tmp/datadog_conten
                         value = ""
                     else:
                         value = str(value).strip()
-                    # Normalize ChargePeriodEnd: midnight → last second of previous day (for comparison)
-                    if field == "ChargePeriodEnd" and value:
-                        value = adjust_charge_period_end_if_midnight(value)
                     comparison_values.append(value)
                 
                 # Add tuple to set (tuples are hashable)
@@ -1844,9 +1836,6 @@ def clean_json_file(json_file_path, comparison_fields=None, datadog_content_path
                     value = ""
                 else:
                     value = str(value).strip()
-                # Normalize ChargePeriodEnd: midnight → last second of previous day (for comparison)
-                if field == "ChargePeriodEnd" and value:
-                    value = adjust_charge_period_end_if_midnight(value)
                 comparison_values.append(value)
             
             comparison_tuple = tuple(comparison_values)
@@ -2142,8 +2131,6 @@ def upload_json_to_datadog(datadog_config, json_file_path):
                 charge_description = str(row.get('ChargeDescription', '')).strip()
                 charge_period_start = str(row.get('ChargePeriodStart', '')).strip()
                 charge_period_end = str(row.get('ChargePeriodEnd', '')).strip()
-                # If ChargePeriodEnd is at midnight, use last second of previous day
-                charge_period_end = adjust_charge_period_end_if_midnight(charge_period_end) or charge_period_end
                 
                 # Parse billed_cost as float
                 try:
